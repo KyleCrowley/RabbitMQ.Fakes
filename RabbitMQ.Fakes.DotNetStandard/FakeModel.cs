@@ -129,11 +129,18 @@ namespace RabbitMQ.Fakes.DotNetStandard
 
         public void BasicCancel(string consumerTag)
         {
-            IBasicConsumer consumer;
-            _consumers.TryRemove(consumerTag, out consumer);
+            _consumers.TryRemove(consumerTag, out var consumer);
+
+            // TODO: Associate consumers with queues so we don't need to loop through *all* queues.
+            foreach (var queue in _server.Queues.Values)
+            {
+                queue.RemoveConsumer(consumerTag);
+            }
 
             if (consumer != null)
+            {
                 consumer.HandleBasicCancelOk(consumerTag);
+            }
         }
 
         public void BasicCancelNoWait(string consumerTag)
@@ -143,16 +150,12 @@ namespace RabbitMQ.Fakes.DotNetStandard
 
         public string BasicConsume(string queue, bool autoAck, string consumerTag, bool noLocal, bool exclusive, IDictionary<string, object> arguments, IBasicConsumer consumer)
         {
-            Queue queueInstance;
-            _server.Queues.TryGetValue(queue, out queueInstance);
+            _server.Queues.TryGetValue(queue, out var queueInstance);
 
             if (queueInstance != null)
             {
-                Func<string, IBasicConsumer, IBasicConsumer> updateFunction = (s, basicConsumer) => basicConsumer;
-                _consumers.AddOrUpdate(consumerTag, consumer, updateFunction);
-
-                NotifyConsumerOfExistingMessages(consumerTag, consumer, queueInstance);
-                NotifyConsumerWhenMessagesAreReceived(consumerTag, consumer, queueInstance);
+                _consumers.AddOrUpdate(consumerTag, consumer, (s, basicConsumer) => basicConsumer);
+                queueInstance.AddConsumer(consumerTag, consumer);
             }
 
             return consumerTag;
@@ -176,26 +179,17 @@ namespace RabbitMQ.Fakes.DotNetStandard
             if (message == null)
                 return null;
 
-            Interlocked.Increment(ref _lastDeliveryTag);
-            var deliveryTag = Convert.ToUInt64(_lastDeliveryTag);
-            const bool redelivered = false;
-            var exchange = message.Exchange;
-            var routingKey = message.RoutingKey;
-            var messageCount = Convert.ToUInt32(queueInstance.Messages.Count);
-            var basicProperties = message.BasicProperties ?? CreateBasicProperties();
-            var body = message.Body;
-
             if (autoAck)
             {
-                WorkingMessages.TryRemove(deliveryTag, out _);
+                WorkingMessages.TryRemove(message.DeliveryTag, out _);
             }
             else
             {
                 RabbitMessage UpdateFunction(ulong key, RabbitMessage existingMessage) => existingMessage;
-                WorkingMessages.AddOrUpdate(deliveryTag, message, UpdateFunction);
+                WorkingMessages.AddOrUpdate(message.DeliveryTag, message, UpdateFunction);
             }
 
-            return new BasicGetResult(deliveryTag, redelivered, exchange, routingKey, messageCount, basicProperties, body);
+            return new BasicGetResult(message.DeliveryTag, false, message.Exchange, message.RoutingKey, Convert.ToUInt32(queueInstance.Messages.Count), message.BasicProperties, message.Body);
         }
 
         public void BasicNack(ulong deliveryTag, bool multiple, bool requeue)
@@ -549,15 +543,20 @@ namespace RabbitMQ.Fakes.DotNetStandard
 
         public void BasicPublish(string exchange, string routingKey, bool mandatory, bool immediate, IBasicProperties basicProperties, byte[] body)
         {
-            var parameters = new RabbitMessage
+            Interlocked.Increment(ref _lastDeliveryTag);
+            var deliveryTag = Convert.ToUInt64(_lastDeliveryTag);
+            var message = new RabbitMessage
             {
                 Exchange = exchange,
                 RoutingKey = routingKey,
                 Mandatory = mandatory,
                 Immediate = immediate,
                 BasicProperties = basicProperties,
-                Body = body
+                Body = body,
+                DeliveryTag = deliveryTag
             };
+            Func<ulong, RabbitMessage, RabbitMessage> updateFunction = (key, existingMessage) => existingMessage;
+            WorkingMessages.AddOrUpdate(deliveryTag, message, updateFunction);
 
             Func<string, Exchange> addExchange = s =>
             {
@@ -569,13 +568,13 @@ namespace RabbitMQ.Fakes.DotNetStandard
                     IsDurable = false,
                     Type = "direct"
                 };
-                newExchange.PublishMessage(parameters);
+                newExchange.PublishMessage(message);
 
                 return newExchange;
             };
             Func<string, Exchange, Exchange> updateExchange = (s, existingExchange) =>
             {
-                existingExchange.PublishMessage(parameters);
+                existingExchange.PublishMessage(message);
 
                 return existingExchange;
             };
@@ -669,35 +668,6 @@ namespace RabbitMQ.Fakes.DotNetStandard
             }
 
             return message != null;
-        }
-
-        private void NotifyConsumerWhenMessagesAreReceived(string consumerTag, IBasicConsumer consumer, Queue queueInstance)
-        {
-            queueInstance.MessagePublished += (sender, message) => { NotifyConsumerOfMessage(consumerTag, consumer, message); };
-        }
-
-        private void NotifyConsumerOfExistingMessages(string consumerTag, IBasicConsumer consumer, Queue queueInstance)
-        {
-            foreach (var message in queueInstance.Messages)
-            {
-                NotifyConsumerOfMessage(consumerTag, consumer, message);
-            }
-        }
-
-        private void NotifyConsumerOfMessage(string consumerTag, IBasicConsumer consumer, RabbitMessage message)
-        {
-            Interlocked.Increment(ref _lastDeliveryTag);
-            var deliveryTag = Convert.ToUInt64(_lastDeliveryTag);
-            const bool redelivered = false;
-            var exchange = message.Exchange;
-            var routingKey = message.RoutingKey;
-            var basicProperties = message.BasicProperties ?? CreateBasicProperties();
-            var body = message.Body;
-
-            Func<ulong, RabbitMessage, RabbitMessage> updateFunction = (key, existingMessage) => existingMessage;
-            WorkingMessages.AddOrUpdate(deliveryTag, message, updateFunction);
-
-            consumer.HandleBasicDeliver(consumerTag, deliveryTag, redelivered, exchange, routingKey, basicProperties, body);
         }
 
         #endregion Private Methods

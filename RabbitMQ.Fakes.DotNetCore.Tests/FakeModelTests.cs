@@ -801,5 +801,59 @@ namespace RabbitMQ.Fakes.DotNetCore.Tests
             Assert.That(node.Queues["my_queue"].Messages.Count, Is.EqualTo(0));
             Assert.That(node.Queues["error_queue"].Messages.Count, Is.EqualTo(0));
         }
+
+        [Test]
+        public void BasicCancel_CancelledBeforeSecondMessageDelivered_DeliversOnlyFirstMessage()
+        {
+            // Arrange
+            var node = new RabbitServer();
+            var model = new FakeModel(node);
+
+            model.QueueDeclare("my_queue");
+
+            var message = "hello world!";
+            var encodedMessage = Encoding.ASCII.GetBytes(message);
+
+            var count = 0;
+            var consumer = new EventingBasicConsumer(model);
+            consumer.Received += (ch, ea) => { count++; };
+
+            var tag = model.BasicConsume("my_queue", true, consumer);
+
+            // Act
+            model.BasicPublish(node.DefaultExchange.Name, "my_queue", null, encodedMessage);
+            model.BasicCancel(tag);
+            model.BasicPublish(node.DefaultExchange.Name, "my_queue", null, encodedMessage);
+
+            // Assert
+            count.Should().Be(1);
+        }
+
+        [Test]
+        public void BasicCancel_CancelledAfterSecondMessageDelivered_DeliversBothMessages()
+        {
+            // Arrange
+            var node = new RabbitServer();
+            var model = new FakeModel(node);
+
+            model.QueueDeclare("my_queue");
+
+            var message = "hello world!";
+            var encodedMessage = Encoding.ASCII.GetBytes(message);
+
+            var count = 0;
+            var consumer = new EventingBasicConsumer(model);
+            consumer.Received += (ch, ea) => { count++; };
+
+            var tag = model.BasicConsume("my_queue", true, consumer);
+
+            // Act
+            model.BasicPublish(node.DefaultExchange.Name, "my_queue", null, encodedMessage);
+            model.BasicPublish(node.DefaultExchange.Name, "my_queue", null, encodedMessage);
+            model.BasicCancel(tag);
+
+            // Assert
+            count.Should().Be(2);
+        }
     }
 }

@@ -11,6 +11,7 @@ namespace RabbitMQ.Fakes.DotNetStandard.Models
         public bool Immediate { get; set; }
         public IBasicProperties BasicProperties { get; set; }
         public byte[] Body { get; set; }
+        public ulong DeliveryTag { get; set; }
 
         public RabbitMessage Copy()
         {
@@ -22,7 +23,8 @@ namespace RabbitMQ.Fakes.DotNetStandard.Models
                 Mandatory = Mandatory,
                 Immediate = Immediate,
                 BasicProperties = BasicProperties,
-                Body = Body
+                Body = Body,
+                DeliveryTag = DeliveryTag
             };
         }
     }
