@@ -51,7 +51,7 @@ jobs:
           path: ./${{ env.PROJECT_NAME }}/bin/Release/*.nupkg
   prerelease:
     needs: build
-    if: github.ref == 'refs/heads/feature'
+    if: startsWith(github.ref, 'refs/heads/feature') || startsWith(github.ref, 'refs/heads/bugfix')
     runs-on: ubuntu-latest
     steps:
       - name: Download Artifact
