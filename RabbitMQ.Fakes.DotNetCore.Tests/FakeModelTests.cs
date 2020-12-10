@@ -8,6 +8,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using System.Threading.Tasks;
 using Queue = RabbitMQ.Fakes.DotNetStandard.Models.Queue;
 
 namespace RabbitMQ.Fakes.DotNetCore.Tests
@@ -854,6 +855,69 @@ namespace RabbitMQ.Fakes.DotNetCore.Tests
 
             // Assert
             count.Should().Be(2);
+        }
+
+        [Test]
+        public void BasicPublish_IAsyncBasicConsumer_DeliversMessageToConsumer()
+        {
+            // Arrange
+            var node = new RabbitServer();
+            var model = new FakeModel(node);
+
+            model.QueueDeclare("my_queue");
+
+            var count = 0;
+            var consumer = new AsyncEventingBasicConsumer(model);
+            consumer.Received += async (ch, ea) =>
+            {
+                count++;
+                await Task.FromResult(0);
+            };
+
+            var tag = model.BasicConsume("my_queue", true, consumer);
+
+            // Act
+            model.BasicPublish(node.DefaultExchange.Name, "my_queue", null, Encoding.ASCII.GetBytes("Hello World!"));
+
+            // Assert
+            count.Should().Be(1);
+        }
+
+        [Test]
+        public void BasicPublish_MultipleIAsyncBasicConsumers_DeliversMessageToConsumersRoundRobin()
+        {
+            // Arrange
+            var node = new RabbitServer();
+            var model = new FakeModel(node);
+
+            model.QueueDeclare("my_queue");
+
+            var count = 0;
+            var consumer = new AsyncEventingBasicConsumer(model);
+            consumer.Received += async (ch, ea) =>
+            {
+                count++;
+                await Task.FromResult(0);
+            };
+
+            var count1 = 0;
+            var consumer1 = new AsyncEventingBasicConsumer(model);
+            consumer1.Received += async (ch, ea) =>
+            {
+                count1++;
+                await Task.FromResult(0);
+            };
+
+            var tag = model.BasicConsume("my_queue", true, consumer);
+            var tag1 = model.BasicConsume("my_queue", true, consumer1);
+
+            // Act
+            model.BasicPublish(node.DefaultExchange.Name, "my_queue", null, Encoding.ASCII.GetBytes("Hello World!"));
+            model.BasicPublish(node.DefaultExchange.Name, "my_queue", null, Encoding.ASCII.GetBytes("Hello Other World!"));
+
+            // Assert
+            count.Should().Be(1);
+            count1.Should().Be(1);
         }
     }
 }

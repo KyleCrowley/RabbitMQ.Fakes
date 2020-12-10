@@ -71,7 +71,14 @@ namespace RabbitMQ.Fakes.DotNetStandard.Models
             {
                 if (_consumers.TryGetValue(consumerName, out var consumer))
                 {
-                    consumer.HandleBasicDeliver(consumerName, message.DeliveryTag, false, message.Exchange, message.RoutingKey, message.BasicProperties, message.Body);
+                    if (consumer is IAsyncBasicConsumer asyncConsumer)
+                    {
+                        asyncConsumer.HandleBasicDeliver(consumerName, message.DeliveryTag, false, message.Exchange, message.RoutingKey, message.BasicProperties, message.Body);
+                    }
+                    else
+                    {
+                        consumer.HandleBasicDeliver(consumerName, message.DeliveryTag, false, message.Exchange, message.RoutingKey, message.BasicProperties, message.Body);
+                    }
                 }
 
                 _consumersQueue.Enqueue(consumerName);
