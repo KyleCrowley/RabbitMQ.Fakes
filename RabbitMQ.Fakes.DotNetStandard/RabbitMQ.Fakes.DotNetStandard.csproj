@@ -1,17 +1,21 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>netstandard2.0</TargetFramework>
-    <Authors>Kyle Crowley</Authors>
+    <!-- General -->
     <Description>Fake RabbitMQ implementation written in .NET Standard. Based off of RabbitMQ.Fakes (https://github.com/Parametric/RabbitMQ.Fakes)</Description>
-    <PackageTags>RabbitMQ AMQP Fake Fakes</PackageTags>
-    <RepositoryUrl>https://github.com/KyleCrowley/RabbitMQ.Fakes.DotNetStandard</RepositoryUrl>
-    <Version>2.1.0</Version>
-    <AssemblyVersion>2.1.0</AssemblyVersion>
-    <FileVersion>2.1.0.0</FileVersion>
-    <PackageReleaseNotes>v2.1.0:
+    <Authors>Kyle Crowley</Authors>
 
-FEATURE: Implemented RabbitMQ default exchange functionality. The default exchange is created upon creation of a RabbitServer object, and all queues created during the server's lifetime are automatically bound to the default exchange.</PackageReleaseNotes>
+    <!-- Build -->
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <IncludeSymbols>true</IncludeSymbols>
+
+    <!-- NuGet -->
+    <PackageId>RabbitMQ.Fakes.DotNetStandard</PackageId>
+    <PackageTags>RabbitMQ AMQP Fake Fakes</PackageTags>
+    <PackageReleaseNotes>https://raw.githubusercontent.com/KyleCrowley/RabbitMQ.Fakes.DotNetStandard/master/RELEASE_NOTES.md</PackageReleaseNotes>
+    <RepositoryType>git</RepositoryType>
+    <RepositoryUrl>https://github.com/KyleCrowley/RabbitMQ.Fakes.DotNetStandard</RepositoryUrl>
   </PropertyGroup>
 
   <ItemGroup>
