@@ -41,6 +41,15 @@ namespace RabbitMQ.Fakes.DotNetStandard.Models
         {
             _consumers[tag] = consumer;
             RebuildConsumerQueue();
+
+            // There may have been messages in the queue before a consumer subscribed.
+            // Deliver those messages now.
+            // NOTE: The use of foreach is intentional here. We don't want to dequeue the messages.
+            foreach (var message in Messages)
+            {
+                // DeliverMessage handles message delivery in a round-robin fashion.
+                DeliverMessage(message);
+            }
         }
 
         public void RemoveConsumer(string tag)

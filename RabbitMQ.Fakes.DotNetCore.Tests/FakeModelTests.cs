@@ -919,5 +919,30 @@ namespace RabbitMQ.Fakes.DotNetCore.Tests
             count.Should().Be(1);
             count1.Should().Be(1);
         }
+
+        [Test]
+        public void BasicConsume_MessagesInQueueBeforeSubscription_DeliversExistingMessagesToConsumer()
+        {
+            // Arrange
+            var node = new RabbitServer();
+            var model = new FakeModel(node);
+
+            model.QueueDeclare("my_queue");
+
+            var count = 0;
+            var consumer = new EventingBasicConsumer(model);
+            consumer.Received += (ch, ea) =>
+            {
+                count++;
+            };
+
+            model.BasicPublish(node.DefaultExchange.Name, "my_queue", null, Encoding.ASCII.GetBytes("Hello World!"));
+
+            // Act
+            var tag = model.BasicConsume("my_queue", true, consumer);
+
+            // Assert
+            count.Should().Be(1);
+        }
     }
 }
