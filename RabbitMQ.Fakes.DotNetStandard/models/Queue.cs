@@ -82,7 +82,7 @@ namespace RabbitMQ.Fakes.DotNetStandard.Models
                 {
                     if (consumer is IAsyncBasicConsumer asyncConsumer)
                     {
-                        asyncConsumer.HandleBasicDeliver(consumerName, message.DeliveryTag, false, message.Exchange, message.RoutingKey, message.BasicProperties, message.Body);
+                        asyncConsumer.HandleBasicDeliver(consumerName, message.DeliveryTag, false, message.Exchange, message.RoutingKey, message.BasicProperties, message.Body).Wait();
                     }
                     else
                     {

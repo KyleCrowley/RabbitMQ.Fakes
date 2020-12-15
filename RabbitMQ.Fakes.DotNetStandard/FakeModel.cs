@@ -139,7 +139,14 @@ namespace RabbitMQ.Fakes.DotNetStandard
 
             if (consumer != null)
             {
-                consumer.HandleBasicCancelOk(consumerTag);
+                if (consumer is IAsyncBasicConsumer asyncConsumer)
+                {
+                    asyncConsumer.HandleBasicCancelOk(consumerTag).Wait();
+                }
+                else
+                {
+                    consumer.HandleBasicCancelOk(consumerTag);
+                }
             }
         }
 

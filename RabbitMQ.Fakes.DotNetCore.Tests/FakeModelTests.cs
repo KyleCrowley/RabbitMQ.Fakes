@@ -944,5 +944,32 @@ namespace RabbitMQ.Fakes.DotNetCore.Tests
             // Assert
             count.Should().Be(1);
         }
+
+        [Test]
+        public void BasicCancel_AsyncConsumer_DoesntDeliverMessagesAfterCancellation()
+        {
+            // Arrange
+            var node = new RabbitServer();
+            var model = new FakeModel(node);
+
+            model.QueueDeclare("my_queue");
+
+            var count = 0;
+            var consumer = new AsyncEventingBasicConsumer(model);
+            consumer.Received += async (ch, ea) =>
+            {
+                count++;
+                Task.FromResult(0);
+            };
+
+            var tag = model.BasicConsume("my_queue", true, consumer);
+
+            // Act
+            model.BasicCancel(tag);
+            model.BasicPublish(node.DefaultExchange.Name, "my_queue", null, Encoding.ASCII.GetBytes("Hello World!"));
+
+            // Assert
+            count.Should().Be(0);
+        }
     }
 }
