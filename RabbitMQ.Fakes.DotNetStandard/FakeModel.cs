@@ -228,8 +228,12 @@ namespace RabbitMQ.Fakes.DotNetStandard
                     && _server.Exchanges.TryGetValue((string)dlx, out var exchange)
             )
             {
-                // Queue has a DLX and it exists on the server.
-                // Publish the message to the DLX.
+                // If the "x-dead-letter-routing-key" argument was specified, that key is used instead of the "original" routing key.
+                // https://www.rabbitmq.com/dlx.html#routing
+                message.RoutingKey = processingQueue.Arguments.TryGetValue("x-dead-letter-routing-key", out var key)
+                    ? (string) key
+                    : message.RoutingKey;
+
                 exchange.PublishMessage(message);
                 return;
             }
@@ -315,6 +319,8 @@ namespace RabbitMQ.Fakes.DotNetStandard
 
         public void ExchangeBind(string destination, string source, string routingKey, IDictionary<string, object> arguments)
         {
+            // TODO: This is an exchange-to-exchange binding *NOT* a queue-to-exchange binding.
+            /*
             Exchange exchange;
             _server.Exchanges.TryGetValue(source, out exchange);
 
@@ -326,6 +332,9 @@ namespace RabbitMQ.Fakes.DotNetStandard
                 exchange.Bindings.AddOrUpdate(binding.Key, binding, (k, v) => binding);
             if (queue != null)
                 queue.Bindings.AddOrUpdate(binding.Key, binding, (k, v) => binding);
+            */
+
+            throw new NotImplementedException();
         }
 
         public void ExchangeBindNoWait(string destination, string source, string routingKey, IDictionary<string, object> arguments)
@@ -335,16 +344,17 @@ namespace RabbitMQ.Fakes.DotNetStandard
 
         public void ExchangeDeclare(string exchange, string type, bool durable, bool autoDelete, IDictionary<string, object> arguments)
         {
-            var exchangeInstance = new Exchange
+            if (_server.Exchanges.ContainsKey(exchange))
             {
-                Name = exchange,
-                Type = type,
-                IsDurable = durable,
-                AutoDelete = autoDelete,
-                Arguments = arguments as IDictionary
-            };
-            Func<string, Exchange, Exchange> updateFunction = (name, existing) => existing;
-            _server.Exchanges.AddOrUpdate(exchange, exchangeInstance, updateFunction);
+                return;
+            }
+
+            var exchangeInstance = ExchangeFactory.Instance.GetExchange(exchange, type);
+            exchangeInstance.IsDurable = durable;
+            exchangeInstance.AutoDelete = autoDelete;
+            exchangeInstance.Arguments = arguments as IDictionary;
+
+            _server.Exchanges.TryAdd(exchange, exchangeInstance);
         }
 
         public void ExchangeDeclareNoWait(string exchange, string type, bool durable, bool autoDelete, IDictionary<string, object> arguments)
@@ -354,7 +364,12 @@ namespace RabbitMQ.Fakes.DotNetStandard
 
         public void ExchangeDeclarePassive(string exchange)
         {
-            ExchangeDeclare(exchange, type: null, durable: false, autoDelete: false, arguments: null);
+            // In "real" RabbitMQ, this will produce a channel-level exception if the exchange does not exist.
+            if (!_server.Exchanges.ContainsKey(exchange))
+            {
+                // TODO: More specific Exception?
+                throw new Exception($"Exchange '{exchange}' does not exist.");
+            }
         }
 
         public void ExchangeDelete(string exchange)
@@ -369,6 +384,8 @@ namespace RabbitMQ.Fakes.DotNetStandard
 
         public void ExchangeUnbind(string destination, string source, string routingKey, IDictionary<string, object> arguments)
         {
+            // TODO: This is an exchange-to-exchange binding *NOT* a queue-to-exchange binding.
+            /*
             Exchange exchange;
             _server.Exchanges.TryGetValue(source, out exchange);
 
@@ -381,6 +398,9 @@ namespace RabbitMQ.Fakes.DotNetStandard
                 exchange.Bindings.TryRemove(binding.Key, out removedBinding);
             if (queue != null)
                 queue.Bindings.TryRemove(binding.Key, out removedBinding);
+            */
+
+            throw new NotImplementedException();
         }
 
         public void ExchangeUnbindNoWait(string destination, string source, string routingKey, IDictionary<string, object> arguments)
@@ -395,7 +415,16 @@ namespace RabbitMQ.Fakes.DotNetStandard
 
         public void QueueBind(string queue, string exchange, string routingKey, IDictionary<string, object> arguments)
         {
-            ExchangeBind(queue, exchange, routingKey, arguments);
+            if (!_server.Queues.TryGetValue(queue, out var queueInstance))
+            {
+                throw new InvalidOperationException($"Cannot bind queue '{queue}' to exchange '{exchange}' because the specified queue does not exist.");
+            }
+            if (!_server.Exchanges.TryGetValue(exchange, out var exchangeInstance))
+            {
+                throw new InvalidOperationException($"Cannot bind queue '{queue}' to exchange '{exchange}' because the specified exchange does not exist.");
+            }
+
+            exchangeInstance.BindQueue(routingKey, queueInstance);
         }
 
         public void QueueBindNoWait(string queue, string exchange, string routingKey, IDictionary<string, object> arguments)
@@ -423,7 +452,7 @@ namespace RabbitMQ.Fakes.DotNetStandard
                 Exchange = _server.DefaultExchange,
                 Queue = queueInstance
             };
-            _server.DefaultExchange.Bindings.AddOrUpdate(exchangeBinding.RoutingKey, exchangeBinding, (routingKey, existing) => existing);
+            _server.DefaultExchange.BindQueue(queueInstance.Name, queueInstance);
 
             return new QueueDeclareOk(queue, 0, 0);
         }
@@ -470,7 +499,16 @@ namespace RabbitMQ.Fakes.DotNetStandard
 
         public void QueueUnbind(string queue, string exchange, string routingKey, IDictionary<string, object> arguments)
         {
-            ExchangeUnbind(queue, exchange, routingKey);
+            if (!_server.Queues.TryGetValue(queue, out var queueInstance))
+            {
+                throw new InvalidOperationException($"Cannot unbind queue '{queue}' from exchange '{exchange}' because the specified queue does not exist.");
+            }
+            if (!_server.Exchanges.TryGetValue(exchange, out var exchangeInstance))
+            {
+                throw new InvalidOperationException($"Cannot unbind queue '{queue}' from exchange '{exchange}' because the specified exchange does not exist.");
+            }
+
+            exchangeInstance.UnbindQueue(routingKey, queueInstance);
         }
 
         public void TxCommit()
@@ -565,27 +603,13 @@ namespace RabbitMQ.Fakes.DotNetStandard
             Func<ulong, RabbitMessage, RabbitMessage> updateFunction = (key, existingMessage) => existingMessage;
             WorkingMessages.AddOrUpdate(deliveryTag, message, updateFunction);
 
-            Func<string, Exchange> addExchange = s =>
+            if (!_server.Exchanges.TryGetValue(exchange, out var exchangeInstance))
             {
-                var newExchange = new Exchange
-                {
-                    Name = exchange,
-                    Arguments = null,
-                    AutoDelete = false,
-                    IsDurable = false,
-                    Type = "direct"
-                };
-                newExchange.PublishMessage(message);
+                throw new InvalidOperationException($"Cannot publish to exchange '{exchange}' as it does not exist.");
+            }
 
-                return newExchange;
-            };
-            Func<string, Exchange, Exchange> updateExchange = (s, existingExchange) =>
-            {
-                existingExchange.PublishMessage(message);
-
-                return existingExchange;
-            };
-            _server.Exchanges.AddOrUpdate(exchange, addExchange, updateExchange);
+            // TODO: Handle unroutable messages.
+            var success = exchangeInstance.PublishMessage(message);
 
             NextPublishSeqNo++;
         }
@@ -622,25 +646,9 @@ namespace RabbitMQ.Fakes.DotNetStandard
             return QueueDeclare(name, durable: false, exclusive: false, autoDelete: false, arguments: null);
         }
 
-        public void QueueBind(string queue, string exchange, string routingKey)
-        {
-            ExchangeBind(queue, exchange, routingKey);
-        }
-
         public uint QueueDelete(string queue)
         {
             return QueueDelete(queue, ifUnused: false, ifEmpty: false);
-        }
-
-        public IEnumerable<RabbitMessage> GetMessagesPublishedToExchange(string exchange)
-        {
-            Exchange exchangeInstance;
-            _server.Exchanges.TryGetValue(exchange, out exchangeInstance);
-
-            if (exchangeInstance == null)
-                return new List<RabbitMessage>();
-
-            return exchangeInstance.Messages;
         }
 
         public IEnumerable<RabbitMessage> GetMessagesOnQueue(string queueName)
@@ -660,13 +668,11 @@ namespace RabbitMQ.Fakes.DotNetStandard
 
         private bool BasicAckSingle(ulong deliveryTag)
         {
-            RabbitMessage message;
-            WorkingMessages.TryRemove(deliveryTag, out message);
+            WorkingMessages.TryRemove(deliveryTag, out var message);
 
             if (message != null)
             {
-                Queue queue;
-                _server.Queues.TryGetValue(message.Queue, out queue);
+                _server.Queues.TryGetValue(message.Queue, out var queue);
 
                 if (queue != null)
                 {

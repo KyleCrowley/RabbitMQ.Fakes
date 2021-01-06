@@ -11,61 +11,59 @@ namespace RabbitMQ.Fakes.DotNetCore.Tests.UseCases
     [TestFixture]
     public class ReceiveMessages
     {
-        private static readonly Dictionary<string, string> HeaderTemplate;
-
         [Test]
         public void ReceiveMessagesOnQueue()
         {
+            // Arrange
             var rabbitServer = new RabbitServer();
 
-            ConfigureQueueBinding(rabbitServer, "my_exchange", "my_queue");
-            SendMessage(rabbitServer, "my_exchange", "hello_world");
+            InitializeQueue("my_queue", rabbitServer);
+            SendMessage(rabbitServer, rabbitServer.DefaultExchange.Name, "my_queue", "hello_world");
 
-            var connectionFactory = new FakeConnectionFactory(rabbitServer);
-            using (var connection = connectionFactory.CreateConnection())
-            using (var channel = connection.CreateModel())
-            {
-                // First message
-                var message = channel.BasicGet("my_queue", autoAck: false);
+            using var connection = new FakeConnectionFactory(rabbitServer).CreateConnection();
+            using var channel = connection.CreateModel();
 
-                Assert.That(message, Is.Not.Null);
-                var messageBody = Encoding.ASCII.GetString(message.Body.ToArray());
+            // Act
+            var message = channel.BasicGet("my_queue", autoAck: false);
 
-                Assert.That(messageBody, Is.EqualTo("hello_world"));
+            // Assert
+            message.Should().NotBeNull();
+            var messageBody = Encoding.ASCII.GetString(message.Body.ToArray());
 
-                Assert.That(rabbitServer.Queues["my_queue"].Messages.Count == 1);
-                channel.BasicAck(message.DeliveryTag, multiple: false);
-                Assert.That(rabbitServer.Queues["my_queue"].Messages.Count == 0);
-            }
+            messageBody.Should().Be("hello_world");
+
+            rabbitServer.Queues["my_queue"].Messages.Count.Should().Be(1);
+            channel.BasicAck(message.DeliveryTag, multiple: false);
+            rabbitServer.Queues["my_queue"].Messages.Count.Should().Be(0);
         }
 
         [Test]
         public void ReceiveMessagesOnQueue_AutoAckEnabled()
         {
+            // Arrange
             var rabbitServer = new RabbitServer();
 
-            ConfigureQueueBinding(rabbitServer, "my_exchange", "my_queue");
-            SendMessage(rabbitServer, "my_exchange", "hello_world");
+            InitializeQueue("my_queue", rabbitServer);
+            SendMessage(rabbitServer, rabbitServer.DefaultExchange.Name, "my_queue", "hello_world");
 
-            var connectionFactory = new FakeConnectionFactory(rabbitServer);
-            using (var connection = connectionFactory.CreateConnection())
-            using (var channel = connection.CreateModel())
-            {
-                // First message
-                var message = channel.BasicGet("my_queue", autoAck: true);
+            using var connection = new FakeConnectionFactory(rabbitServer).CreateConnection();
+            using var channel = connection.CreateModel();
 
-                Assert.That(message, Is.Not.Null);
+            // Act
+            var message = channel.BasicGet("my_queue", autoAck: true);
 
-                Assert.That(rabbitServer.Queues["my_queue"].Messages.Count == 0);
-            }
+            // Assert
+            message.Should().NotBeNull();
+            rabbitServer.Queues["my_queue"].Messages.Count.Should().Be(0);
         }
 
         [Test]
         public void ReceiveMessagesOnQueueWithBasicProperties()
         {
+            // Arrange
             var rabbitServer = new RabbitServer();
 
-            ConfigureQueueBinding(rabbitServer, "my_exchange", "my_queue");
+            InitializeQueue("my_queue", rabbitServer);
             var basicProperties = new FakeBasicProperties
             {
                 Headers = new Dictionary<string, object>() { { "TestKey", "TestValue" } },
@@ -85,50 +83,42 @@ namespace RabbitMQ.Fakes.DotNetCore.Tests.UseCases
                 AppId = "1"
             };
 
-            SendMessage(rabbitServer, "my_exchange", "hello_world", basicProperties);
-            var connectionFactory = new FakeConnectionFactory(rabbitServer);
-            using (var connection = connectionFactory.CreateConnection())
-            using (var channel = connection.CreateModel())
-            {
-                // First message
-                var message = channel.BasicGet("my_queue", autoAck: false);
+            SendMessage(rabbitServer, rabbitServer.DefaultExchange.Name, "my_queue", "hello_world", basicProperties);
+            using var connection = new FakeConnectionFactory(rabbitServer).CreateConnection();
+            using var channel = connection.CreateModel();
 
-                Assert.That(message, Is.Not.Null);
-                var messageBody = Encoding.ASCII.GetString(message.Body.ToArray());
+            // Act
+            var message = channel.BasicGet("my_queue", autoAck: false);
 
-                Assert.That(messageBody, Is.EqualTo("hello_world"));
+            // Assert
+            message.Should().NotBeNull();
+            var messageBody = Encoding.ASCII.GetString(message.Body.ToArray());
 
-                var actualBasicProperties = message.BasicProperties;
+            messageBody.Should().Be("hello_world");
 
-                actualBasicProperties.Should().BeEquivalentTo(basicProperties);
+            var actualBasicProperties = message.BasicProperties;
 
-                channel.BasicAck(message.DeliveryTag, multiple: false);
-            }
+            actualBasicProperties.Should().BeEquivalentTo(basicProperties);
+
+            //channel.BasicAck(message.DeliveryTag, multiple: false);
         }
 
-        private static void SendMessage(RabbitServer rabbitServer, string exchange, string message, IBasicProperties basicProperties = null)
+        private void SendMessage(RabbitServer rabbitServer, string exchange, string routingKey, string message, IBasicProperties basicProperties = null)
         {
-            var connectionFactory = new FakeConnectionFactory(rabbitServer);
+            using var connection = new FakeConnectionFactory(rabbitServer).CreateConnection();
+            using var channel = connection.CreateModel();
 
-            using (var connection = connectionFactory.CreateConnection())
-            using (var channel = connection.CreateModel())
-            {
-                var messageBody = Encoding.ASCII.GetBytes(message);
-                channel.BasicPublish(exchange: exchange, routingKey: null, mandatory: false, basicProperties: basicProperties, body: messageBody);
-            }
+            var messageBody = Encoding.ASCII.GetBytes(message);
+
+            channel.BasicPublish(exchange: exchange, routingKey: routingKey, mandatory: false, basicProperties: basicProperties, body: messageBody);
         }
 
-        private void ConfigureQueueBinding(RabbitServer rabbitServer, string exchangeName, string queueName)
+        private void InitializeQueue(string queueName, RabbitServer server)
         {
-            var connectionFactory = new FakeConnectionFactory(rabbitServer);
-            using (var connection = connectionFactory.CreateConnection())
-            using (var channel = connection.CreateModel())
-            {
-                channel.QueueDeclare(queue: queueName, durable: false, exclusive: false, autoDelete: false, arguments: null);
-                channel.ExchangeDeclare(exchange: exchangeName, type: ExchangeType.Direct);
+            using var connection = new FakeConnectionFactory(server).CreateConnection();
+            using var channel = connection.CreateModel();
 
-                channel.QueueBind(queueName, exchangeName, null);
-            }
+            channel.QueueDeclare(queue: queueName, durable: false, exclusive: false, autoDelete: false, arguments: null);
         }
     }
 }
