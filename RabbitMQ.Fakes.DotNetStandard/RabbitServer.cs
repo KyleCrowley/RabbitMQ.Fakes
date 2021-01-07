@@ -9,7 +9,7 @@ namespace RabbitMQ.Fakes.DotNetStandard
 
         public ConcurrentDictionary<string, Queue> Queues { get; }
 
-        public Exchange DefaultExchange => Exchanges[string.Empty];
+        public DirectExchange DefaultExchange => (DirectExchange)Exchanges[string.Empty];
 
         public RabbitServer()
         {
@@ -31,11 +31,7 @@ namespace RabbitMQ.Fakes.DotNetStandard
         private void InitializeDefaultExchange()
         {
             // https://www.rabbitmq.com/tutorials/amqp-concepts.html#exchange-default
-            Exchanges[string.Empty] = new Exchange
-            {
-                Name = string.Empty,
-                Type = "Direct"
-            };
+            Exchanges[string.Empty] = new DirectExchange(string.Empty);
         }
     }
 }

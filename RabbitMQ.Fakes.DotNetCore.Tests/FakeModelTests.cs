@@ -72,7 +72,7 @@ namespace RabbitMQ.Fakes.DotNetCore.Tests
             var model = new FakeModel(node);
 
             const string exchangeName = "someExchange";
-            const string exchangeType = "someType";
+            const string exchangeType = ExchangeType.Direct;
             const bool isDurable = true;
             const bool isAutoDelete = false;
             var arguments = new Dictionary<string, object>();
@@ -95,7 +95,7 @@ namespace RabbitMQ.Fakes.DotNetCore.Tests
             var model = new FakeModel(node);
 
             const string exchangeName = "someExchange";
-            const string exchangeType = "someType";
+            const string exchangeType = ExchangeType.Direct;
             const bool isDurable = true;
 
             // Act
@@ -116,7 +116,7 @@ namespace RabbitMQ.Fakes.DotNetCore.Tests
             var model = new FakeModel(node);
 
             const string exchangeName = "someExchange";
-            const string exchangeType = "someType";
+            const string exchangeType = ExchangeType.Direct;
 
             // Act
             model.ExchangeDeclare(exchange: exchangeName, type: exchangeType);
@@ -129,7 +129,7 @@ namespace RabbitMQ.Fakes.DotNetCore.Tests
         }
 
         [Test]
-        public void ExchangeDeclarePassive_WithName_CreatesExchange()
+        public void ExchangeDeclarePassive_NoExchangeWithName_ThrowsException()
         {
             // Arrange
             var node = new RabbitServer();
@@ -138,13 +138,10 @@ namespace RabbitMQ.Fakes.DotNetCore.Tests
             const string exchangeName = "someExchange";
 
             // Act
-            model.ExchangeDeclarePassive(exchange: exchangeName);
+            Action action = () => model.ExchangeDeclarePassive(exchange: exchangeName);
 
             // Assert
-            node.Exchanges.Should().ContainKey(exchangeName, "an exchange was declared with name {0}", exchangeName);
-
-            var exchange = node.Exchanges[exchangeName];
-            AssertExchangeDetails(exchange, exchangeName, false, null, false, null);
+            action.Should().Throw<Exception>("the specified exchange was not previously declared non-passively");
         }
 
         [Test]
@@ -155,7 +152,7 @@ namespace RabbitMQ.Fakes.DotNetCore.Tests
             var model = new FakeModel(node);
 
             const string exchangeName = "someExchange";
-            const string exchangeType = "someType";
+            const string exchangeType = ExchangeType.Direct;
             const bool isDurable = true;
             const bool isAutoDelete = false;
             var arguments = new Dictionary<string, object>();
@@ -170,13 +167,13 @@ namespace RabbitMQ.Fakes.DotNetCore.Tests
             AssertExchangeDetails(exchange, exchangeName, isAutoDelete, arguments, isDurable, exchangeType);
         }
 
-        private static void AssertExchangeDetails(Exchange exchange, string exchangeName, bool isAutoDelete, IDictionary<string, object> arguments, bool isDurable, string exchangeType)
+        private void AssertExchangeDetails(Exchange exchange, string exchangeName, bool isAutoDelete, IDictionary<string, object> arguments, bool isDurable, string exchangeType)
         {
-            Assert.That(exchange.AutoDelete, Is.EqualTo(isAutoDelete));
-            Assert.That(exchange.Arguments, Is.EqualTo(arguments));
-            Assert.That(exchange.IsDurable, Is.EqualTo(isDurable));
-            Assert.That(exchange.Name, Is.EqualTo(exchangeName));
-            Assert.That(exchange.Type, Is.EqualTo(exchangeType));
+            exchange.AutoDelete.Should().Be(isAutoDelete);
+            exchange.Arguments.Should().BeEquivalentTo(arguments);
+            exchange.IsDurable.Should().Be(isDurable);
+            exchange.Name.Should().Be(exchangeName);
+            exchange.Type.Should().Be(exchangeType);
         }
 
         [Test]
@@ -187,7 +184,7 @@ namespace RabbitMQ.Fakes.DotNetCore.Tests
             var model = new FakeModel(node);
 
             const string exchangeName = "someExchange";
-            model.ExchangeDeclare(exchangeName, "someType");
+            model.ExchangeDeclare(exchangeName, ExchangeType.Direct);
 
             // Act
             model.ExchangeDelete(exchange: exchangeName);
@@ -206,7 +203,7 @@ namespace RabbitMQ.Fakes.DotNetCore.Tests
             var model = new FakeModel(node);
 
             const string exchangeName = "someExchange";
-            model.ExchangeDeclare(exchangeName, "someType");
+            model.ExchangeDeclare(exchangeName, ExchangeType.Direct);
 
             // Act
             model.ExchangeDelete(exchange: exchangeName, ifUnused: ifUnused);
@@ -225,7 +222,7 @@ namespace RabbitMQ.Fakes.DotNetCore.Tests
             var model = new FakeModel(node);
 
             const string exchangeName = "someExchange";
-            model.ExchangeDeclare(exchangeName, "someType");
+            model.ExchangeDeclare(exchangeName, ExchangeType.Direct);
 
             // Act
             model.ExchangeDeleteNoWait(exchange: exchangeName, ifUnused: ifUnused);
@@ -242,7 +239,7 @@ namespace RabbitMQ.Fakes.DotNetCore.Tests
             var model = new FakeModel(node);
 
             const string exchangeName = "someExchange";
-            model.ExchangeDeclare(exchangeName, "someType");
+            model.ExchangeDeclare(exchangeName, ExchangeType.Direct);
 
             // Act
             model.ExchangeDelete(exchange: "someOtherExchange");
@@ -251,8 +248,10 @@ namespace RabbitMQ.Fakes.DotNetCore.Tests
             node.Exchanges.Should().NotContainKey("someOtherExchange", "the exchange with name {0} never existed", "someOtherExchange");
         }
 
+        // TODO: Fix once ExchangeBind is implemented properly.
+        /*
         [Test]
-        public void ExchangeBind_BindsAnExchangeToAQueue()
+        public void ExchangeBind_BindsAnExchangeToAnotherExchange()
         {
             // Arrange
             var node = new RabbitServer();
@@ -263,15 +262,21 @@ namespace RabbitMQ.Fakes.DotNetCore.Tests
             const string routingKey = "someRoutingKey";
             var arguments = new Dictionary<string, object>();
 
-            model.ExchangeDeclare(exchangeName, "direct");
+            model.ExchangeDeclare(exchangeName, ExchangeType.Direct);
             model.QueueDeclarePassive(queueName);
 
             // Act
             model.ExchangeBind(queueName, exchangeName, routingKey, arguments);
 
             // Assert
-            AssertBinding(node, exchangeName, routingKey, queueName);
+            var exchange = node.Exchanges[exchangeName].As<DirectExchange>();
+            exchange.Bindings.Should().ContainKey(routingKey);
+
+            var binding = exchange.Bindings[routingKey];
+            binding.Should().HaveCount(1);
+            binding[0].Name.Should().Be(queueName);
         }
+        */
 
         [Test]
         public void QueueBind_BindsAnExchangeToAQueue()
@@ -292,16 +297,16 @@ namespace RabbitMQ.Fakes.DotNetCore.Tests
             model.QueueBind(queueName, exchangeName, routingKey, arguments);
 
             // Assert
-            AssertBinding(node, exchangeName, routingKey, queueName);
+            var exchange = node.Exchanges[exchangeName].As<DirectExchange>();
+            exchange.Bindings.Should().ContainKey(routingKey);
+
+            var binding = exchange.Bindings[routingKey];
+            binding.Should().HaveCount(1);
+            binding[0].Name.Should().Be(queueName);
         }
 
-        private static void AssertBinding(RabbitServer server, string exchangeName, string routingKey, string queueName)
-        {
-            Assert.That(server.Exchanges[exchangeName].Bindings, Has.Count.EqualTo(1));
-            Assert.That(server.Exchanges[exchangeName].Bindings.First().Value.RoutingKey, Is.EqualTo(routingKey));
-            Assert.That(server.Exchanges[exchangeName].Bindings.First().Value.Queue.Name, Is.EqualTo(queueName));
-        }
-
+        // TODO: Fix once ExchangeBind/ExchangeUnbind are implemented properly.
+        /*
         [Test]
         public void ExchangeUnbind_RemovesBinding()
         {
@@ -322,9 +327,10 @@ namespace RabbitMQ.Fakes.DotNetCore.Tests
             model.ExchangeUnbind(queueName, exchangeName, routingKey, arguments);
 
             // Assert
-            Assert.That(node.Exchanges[exchangeName].Bindings, Is.Empty);
-            Assert.That(node.Queues[queueName].Bindings, Is.Empty);
+            node.Exchanges[exchangeName].As<DirectExchange>().Bindings.Should().BeEmpty();
+            node.Queues[queueName].Bindings.Should().BeEmpty();
         }
+        */
 
         [Test]
         public void QueueUnbind_RemovesBinding()
@@ -340,14 +346,13 @@ namespace RabbitMQ.Fakes.DotNetCore.Tests
 
             model.ExchangeDeclare(exchangeName, "direct");
             model.QueueDeclarePassive(queueName);
-            model.ExchangeBind(exchangeName, queueName, routingKey, arguments);
+            model.QueueBind(queueName, exchangeName, routingKey, arguments);
 
             // Act
             model.QueueUnbind(queueName, exchangeName, routingKey, arguments);
 
             // Assert
-            Assert.That(node.Exchanges[exchangeName].Bindings, Is.Empty);
-            Assert.That(node.Queues[queueName].Bindings, Is.Empty);
+            node.Exchanges[exchangeName].As<DirectExchange>().Bindings.Should().BeEmpty();
         }
 
         [Test]
@@ -578,19 +583,17 @@ namespace RabbitMQ.Fakes.DotNetCore.Tests
             var node = new RabbitServer();
             var model = new FakeModel(node);
 
-            model.ExchangeDeclare("my_exchange", ExchangeType.Direct);
             model.QueueDeclarePassive("my_queue");
-            model.ExchangeBind("my_queue", "my_exchange", null);
 
             var message = "hello world!";
             var encodedMessage = Encoding.ASCII.GetBytes(message);
 
             // Act
-            model.BasicPublish("my_exchange", null, null, encodedMessage);
+            model.BasicPublish(node.DefaultExchange.Name, "my_queue", null, encodedMessage);
 
             // Assert
-            Assert.That(node.Queues["my_queue"].Messages.Count, Is.EqualTo(1));
-            Assert.That(node.Queues["my_queue"].Messages.First().Body, Is.EqualTo(encodedMessage));
+            node.Queues["my_queue"].Messages.Count.Should().Be(1);
+            AssertEqual(node.Queues["my_queue"].Messages.First().Body, encodedMessage);
         }
 
         [Test]
@@ -599,13 +602,11 @@ namespace RabbitMQ.Fakes.DotNetCore.Tests
             var node = new RabbitServer();
             var model = new FakeModel(node);
 
-            model.ExchangeDeclare("my_exchange", ExchangeType.Direct);
             model.QueueDeclarePassive("my_queue");
-            model.ExchangeBind("my_queue", "my_exchange", null);
 
             var message = "hello world!";
             var encodedMessage = Encoding.ASCII.GetBytes(message);
-            model.BasicPublish("my_exchange", null, null, encodedMessage);
+            model.BasicPublish(node.DefaultExchange.Name, "my_queue", null, encodedMessage);
             model.BasicConsume("my_queue", true, new EventingBasicConsumer(model));
 
             // Act
@@ -613,7 +614,7 @@ namespace RabbitMQ.Fakes.DotNetCore.Tests
             model.BasicAck(deliveryTag, false);
 
             // Assert
-            Assert.That(node.Queues["my_queue"].Messages.Count, Is.EqualTo(0));
+            node.Queues["my_queue"].Messages.Count.Should().Be(0);
         }
 
         [Test]
@@ -622,18 +623,16 @@ namespace RabbitMQ.Fakes.DotNetCore.Tests
             var node = new RabbitServer();
             var model = new FakeModel(node);
 
-            model.ExchangeDeclare("my_exchange", ExchangeType.Direct);
             model.QueueDeclarePassive("my_queue");
-            model.ExchangeBind("my_queue", "my_exchange", null);
 
             var message = "hello world!";
             var encodedMessage = Encoding.ASCII.GetBytes(message);
-            model.BasicPublish("my_exchange", null, null, encodedMessage);
+            model.BasicPublish(node.DefaultExchange.Name, "my_queue", null, encodedMessage);
             model.BasicConsume("my_queue", true, new EventingBasicConsumer(model));
 
             var message2 = "hello world, too!!";
             var encodedMessage2 = Encoding.ASCII.GetBytes(message2);
-            model.BasicPublish("my_exchange", null, null, encodedMessage2);
+            model.BasicPublish(node.DefaultExchange.Name, "my_queue", null, encodedMessage2);
             model.BasicConsume("my_queue", true, new EventingBasicConsumer(model));
 
             // Act
@@ -641,7 +640,7 @@ namespace RabbitMQ.Fakes.DotNetCore.Tests
             model.BasicAck(deliveryTag, true);
 
             // Assert
-            Assert.That(node.Queues["my_queue"].Messages.Count, Is.EqualTo(0));
+            node.Queues["my_queue"].Messages.Count.Should().Be(0);
         }
 
         [Test]
@@ -651,20 +650,18 @@ namespace RabbitMQ.Fakes.DotNetCore.Tests
             var node = new RabbitServer();
             var model = new FakeModel(node);
 
-            model.ExchangeDeclare("my_exchange", ExchangeType.Direct);
             model.QueueDeclarePassive("my_queue");
-            model.ExchangeBind("my_queue", "my_exchange", null);
 
             var message = "hello world!";
             var encodedMessage = Encoding.ASCII.GetBytes(message);
-            model.BasicPublish("my_exchange", null, null, encodedMessage);
+            model.BasicPublish(node.DefaultExchange.Name, "my_queue", null, encodedMessage);
 
             // Act
             var response = model.BasicGet("my_queue", false);
 
             // Assert
-            Assert.That(response.Body.Span.ToArray(), Is.EqualTo(encodedMessage));
-            Assert.That(response.DeliveryTag, Is.GreaterThan(0));
+            AssertEqual(response.Body, encodedMessage);
+            response.DeliveryTag.Should().BeGreaterThan(0);
         }
 
         [Test]
@@ -701,25 +698,23 @@ namespace RabbitMQ.Fakes.DotNetCore.Tests
         [TestCase(false, 0, TestName = "If requeue param to BasicNack is false, the message that is nacked should be removed from Rabbit")]
         public void Nacking_Message_Should_Not_Reenqueue_Brand_New_Message(bool requeue, int expectedMessageCount)
         {
-            // arrange
+            // Arrange
             var node = new RabbitServer();
             var model = new FakeModel(node);
 
-            model.ExchangeDeclare("my_exchange", ExchangeType.Direct);
             model.QueueDeclare("my_queue");
-            model.ExchangeBind("my_queue", "my_exchange", null);
 
             var encodedMessage = Encoding.ASCII.GetBytes("hello world!");
-            model.BasicPublish("my_exchange", null, null, encodedMessage);
+            model.BasicPublish(node.DefaultExchange.Name, "my_queue", null, encodedMessage);
             model.BasicConsume("my_queue", false, new EventingBasicConsumer(model));
 
-            // act
+            // Act
             var deliveryTag = model.WorkingMessages.First().Key;
             model.BasicNack(deliveryTag, false, requeue);
 
-            // assert
-            Assert.That(node.Queues["my_queue"].Messages.Count, Is.EqualTo(expectedMessageCount));
-            Assert.That(model.WorkingMessages.Count, Is.EqualTo(expectedMessageCount));
+            // Assert
+            node.Queues["my_queue"].Messages.Count.Should().Be(expectedMessageCount);
+            model.WorkingMessages.Count.Should().Be(expectedMessageCount);
         }
 
         [TestCase(true, 0, TestName = "BasicGet WITH auto-ack SHOULD remove the message from the queue")]
@@ -730,19 +725,18 @@ namespace RabbitMQ.Fakes.DotNetCore.Tests
             var node = new RabbitServer();
             var model = new FakeModel(node);
 
-            model.ExchangeDeclare("my_exchange", ExchangeType.Direct);
             model.QueueDeclare("my_queue");
-            model.ExchangeBind("my_queue", "my_exchange", null);
 
             var encodedMessage = Encoding.ASCII.GetBytes("hello world!");
-            model.BasicPublish("my_exchange", null, null, encodedMessage);
+            model.BasicPublish(node.DefaultExchange.Name, "my_queue", null, encodedMessage);
 
             // act
             var message = model.BasicGet("my_queue", autoAck);
 
             // assert
-            Assert.That(node.Queues["my_queue"].Messages.Count, Is.EqualTo(expectedMessageCount));
-            Assert.That(model.WorkingMessages.Count, Is.EqualTo(expectedMessageCount));
+            AssertEqual(message.Body, encodedMessage);
+            node.Queues["my_queue"].Messages.Count.Should().Be(expectedMessageCount);
+            model.WorkingMessages.Count.Should().Be(expectedMessageCount);
         }
 
         [Test]
@@ -753,27 +747,26 @@ namespace RabbitMQ.Fakes.DotNetCore.Tests
 
             model.ExchangeDeclare("dead_letter_exchange", ExchangeType.Direct);
             model.QueueDeclare("error_queue");
-            model.ExchangeBind("error_queue", "dead_letter_exchange", null);
+            model.QueueBind("error_queue", "dead_letter_exchange", "error_queue");
 
-            model.ExchangeDeclare("my_exchange", ExchangeType.Direct);
             model.QueueDeclare("my_queue", arguments: new Dictionary<string, object>
             {
                 { "x-dead-letter-exchange", "dead_letter_exchange" },
                 { "x-dead-letter-routing-key", "error_queue" }
             });
-            model.ExchangeBind("my_queue", "my_exchange", null);
 
             var message = "hello world!";
             var encodedMessage = Encoding.ASCII.GetBytes(message);
-            node.Queues["my_queue"].Messages.Enqueue(new RabbitMessage() { Queue = "my_queue", Body = encodedMessage });
+            model.BasicPublish(node.DefaultExchange.Name, "my_queue", null, encodedMessage);
+
             var rabbitMessage = model.BasicGet("my_queue", false);
 
             // Act
             model.BasicReject(rabbitMessage.DeliveryTag, requeue: false);
 
             // Assert
-            Assert.That(node.Queues["my_queue"].Messages.Count, Is.EqualTo(0));
-            Assert.That(node.Queues["error_queue"].Messages.Count, Is.EqualTo(1));
+            node.Queues["my_queue"].Messages.Count.Should().Be(0);
+            node.Queues["error_queue"].Messages.Count.Should().Be(1);
         }
 
         [Test]
@@ -784,23 +777,22 @@ namespace RabbitMQ.Fakes.DotNetCore.Tests
 
             model.ExchangeDeclare("dead_letter_exchange", ExchangeType.Direct);
             model.QueueDeclare("error_queue");
-            model.ExchangeBind("error_queue", "dead_letter_exchange", null);
+            model.QueueBind("error_queue", "dead_letter_exchange", "error_queue");
 
-            model.ExchangeDeclare("my_exchange", ExchangeType.Direct);
             model.QueueDeclare("my_queue");
-            model.ExchangeBind("my_queue", "my_exchange", null);
 
             var message = "hello world!";
             var encodedMessage = Encoding.ASCII.GetBytes(message);
-            node.Queues["my_queue"].Messages.Enqueue(new RabbitMessage() { Queue = "my_queue", Body = encodedMessage });
+            model.BasicPublish(node.DefaultExchange.Name, "my_queue", null, encodedMessage);
+
             var rabbitMessage = model.BasicGet("my_queue", false);
 
             // Act
             model.BasicReject(rabbitMessage.DeliveryTag, requeue: false);
 
             // Assert
-            Assert.That(node.Queues["my_queue"].Messages.Count, Is.EqualTo(0));
-            Assert.That(node.Queues["error_queue"].Messages.Count, Is.EqualTo(0));
+            node.Queues["my_queue"].Messages.Count.Should().Be(0);
+            node.Queues["error_queue"].Messages.Count.Should().Be(0);
         }
 
         [Test]
@@ -970,6 +962,126 @@ namespace RabbitMQ.Fakes.DotNetCore.Tests
 
             // Assert
             count.Should().Be(0);
+        }
+
+        [Test]
+        public void BasicPublish_PublisherConfirmsDisabled_DoesNotRaiseEvents()
+        {
+            // Arrange
+            var node = new RabbitServer();
+            var channel = new FakeModel(node);
+
+            channel.QueueDeclare("my_queue");
+
+            using var monitoredChannel = channel.Monitor();
+
+            // Act
+            channel.BasicPublish(node.DefaultExchange.Name, "my_queue", null, Encoding.ASCII.GetBytes("Hello World!"));
+
+            // Assert
+            monitoredChannel.Should().NotRaise("BasicAcks");
+            monitoredChannel.Should().NotRaise("BasicReturn");
+        }
+
+        [Test]
+        public void BasicPublish_PublisherConfirmsEnabledNotMandatoryNoMatchingQueue_RaisesBasicAcksEventOnly()
+        {
+            // Arrange
+            var node = new RabbitServer();
+            var channel = new FakeModel(node);
+
+            channel.ExchangeDeclare("my_exchange", ExchangeType.Direct);
+            channel.QueueDeclare("my_queue");
+            channel.QueueBind("my_queue", "my_exchange", "foobar");
+
+            channel.ConfirmSelect();
+
+            using var monitoredChannel = channel.Monitor();
+
+            // Act
+            channel.BasicPublish("my_exchange", "fizzbuzz", false, true, null, Encoding.ASCII.GetBytes("Hello World!"));
+
+            // Assert
+            monitoredChannel.Should().Raise("BasicAcks");
+            monitoredChannel.Should().NotRaise("BasicReturn");
+        }
+
+        [Test]
+        public void BasicPublish_PublisherConfirmsEnabledNoMatchingQueue_RaisesBasicReturnEvent()
+        {
+            // Arrange
+            var node = new RabbitServer();
+            var channel = new FakeModel(node);
+
+            channel.ExchangeDeclare("my_exchange", ExchangeType.Direct);
+            channel.QueueDeclare("my_queue");
+            channel.QueueBind("my_queue", "my_exchange", "foobar");
+
+            channel.ConfirmSelect();
+
+            using var monitoredChannel = channel.Monitor();
+
+            // Act
+            channel.BasicPublish("my_exchange", "fizzbuzz", null, Encoding.ASCII.GetBytes("Hello World!"));
+
+            // Assert
+            monitoredChannel.Should().Raise("BasicReturn").WithArgs<BasicReturnEventArgs>(a => a.Exchange == "my_exchange");
+            monitoredChannel.Should().Raise("BasicAcks");
+        }
+
+        [Test]
+        public void BasicPublish_PublisherConfirmsEnabled_RaisesBasicAcksEvent()
+        {
+            // Arrange
+            var node = new RabbitServer();
+            var channel = new FakeModel(node);
+
+            channel.QueueDeclare("my_queue");
+
+            channel.ConfirmSelect();
+
+            using var monitoredChannel = channel.Monitor();
+
+            // Act
+            channel.BasicPublish(node.DefaultExchange.Name, "my_queue", null, Encoding.ASCII.GetBytes("Hello World!"));
+
+            // Assert
+            monitoredChannel.Should().Raise("BasicAcks");
+        }
+
+        [Test]
+        public void WaitForConfirms_PublisherConfirmsDisabled_ThrowsInvalidOperationException()
+        {
+            // Arrange
+            var node = new RabbitServer();
+            var sut = new FakeModel(node);
+
+            // Act
+            Action action = () => sut.WaitForConfirms();
+
+            // Assert
+            action.Should().Throw<InvalidOperationException>();
+        }
+
+        [Test]
+        public void WaitForConfirms_PublisherConfirmsEnabled_ReturnsTrue()
+        {
+            // Arrange
+            var node = new RabbitServer();
+            var sut = new FakeModel(node);
+
+            sut.ConfirmSelect();
+
+            // Act
+            var allAcked = sut.WaitForConfirms();
+
+            // Assert
+            allAcked.Should().BeTrue();
+        }
+
+        private void AssertEqual(ReadOnlyMemory<byte> actual, ReadOnlySpan<byte> expected)
+        {
+            actual.Span.SequenceEqual(expected).Should().BeTrue();
         }
     }
 }

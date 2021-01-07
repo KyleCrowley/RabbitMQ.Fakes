@@ -5,39 +5,42 @@ using System.Linq;
 
 namespace RabbitMQ.Fakes.DotNetStandard.Models
 {
-    public class Exchange
+    public abstract class Exchange
     {
-        public string Name { get; set; }
-        public string Type { get; set; }
+        public string Name { get; }
+        public string Type { get; }
         public bool IsDurable { get; set; }
         public bool AutoDelete { get; set; }
         public IDictionary Arguments = new Dictionary<string, object>();
 
-        public ConcurrentQueue<RabbitMessage> Messages = new ConcurrentQueue<RabbitMessage>();
-        public ConcurrentDictionary<string, ExchangeQueueBinding> Bindings = new ConcurrentDictionary<string, ExchangeQueueBinding>();
+        public ConcurrentDictionary<string, IList<Queue>> QueueBindings = new ConcurrentDictionary<string, IList<Queue>>();
 
-        public void PublishMessage(RabbitMessage message)
+        public Exchange(string name, string type)
         {
-            this.Messages.Enqueue(message);
+            Name = name;
+            Type = type;
+        }
 
-            if (string.IsNullOrWhiteSpace(message.RoutingKey))
-            {
-                foreach (var binding in Bindings)
-                {
-                    binding.Value.Queue.PublishMessage(message);
-                }
-            }
-            else
-            {
-                var matchingBindings = Bindings
-                    .Values
-                    .Where(b => b.RoutingKey == message.RoutingKey);
+        public abstract void BindQueue(string bindingKey, Queue queue);
 
-                foreach (var binding in matchingBindings)
-                {
-                    binding.Queue.PublishMessage(message);
-                }
+        public abstract void UnbindQueue(string bindingKey, Queue queue);
+
+        protected abstract IEnumerable<Queue> GetQueues(RabbitMessage message);
+
+        public bool PublishMessage(RabbitMessage message)
+        {
+            var queues = GetQueues(message);
+            if (queues?.Any() != true)
+            {
+                return false;
             }
+
+            foreach (var queue in queues)
+            {
+                queue.PublishMessage(message);
+            }
+
+            return true;
         }
     }
 }
