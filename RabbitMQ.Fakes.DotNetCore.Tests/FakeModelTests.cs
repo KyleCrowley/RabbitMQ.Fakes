@@ -964,6 +964,121 @@ namespace RabbitMQ.Fakes.DotNetCore.Tests
             count.Should().Be(0);
         }
 
+        [Test]
+        public void BasicPublish_PublisherConfirmsDisabled_DoesNotRaiseEvents()
+        {
+            // Arrange
+            var node = new RabbitServer();
+            var channel = new FakeModel(node);
+
+            channel.QueueDeclare("my_queue");
+
+            using var monitoredChannel = channel.Monitor();
+
+            // Act
+            channel.BasicPublish(node.DefaultExchange.Name, "my_queue", null, Encoding.ASCII.GetBytes("Hello World!"));
+
+            // Assert
+            monitoredChannel.Should().NotRaise("BasicAcks");
+            monitoredChannel.Should().NotRaise("BasicReturn");
+        }
+
+        [Test]
+        public void BasicPublish_PublisherConfirmsEnabledNotMandatoryNoMatchingQueue_RaisesBasicAcksEventOnly()
+        {
+            // Arrange
+            var node = new RabbitServer();
+            var channel = new FakeModel(node);
+
+            channel.ExchangeDeclare("my_exchange", ExchangeType.Direct);
+            channel.QueueDeclare("my_queue");
+            channel.QueueBind("my_queue", "my_exchange", "foobar");
+
+            channel.ConfirmSelect();
+
+            using var monitoredChannel = channel.Monitor();
+
+            // Act
+            channel.BasicPublish("my_exchange", "fizzbuzz", false, true, null, Encoding.ASCII.GetBytes("Hello World!"));
+
+            // Assert
+            monitoredChannel.Should().Raise("BasicAcks");
+            monitoredChannel.Should().NotRaise("BasicReturn");
+        }
+
+        [Test]
+        public void BasicPublish_PublisherConfirmsEnabledNoMatchingQueue_RaisesBasicReturnEvent()
+        {
+            // Arrange
+            var node = new RabbitServer();
+            var channel = new FakeModel(node);
+
+            channel.ExchangeDeclare("my_exchange", ExchangeType.Direct);
+            channel.QueueDeclare("my_queue");
+            channel.QueueBind("my_queue", "my_exchange", "foobar");
+
+            channel.ConfirmSelect();
+
+            using var monitoredChannel = channel.Monitor();
+
+            // Act
+            channel.BasicPublish("my_exchange", "fizzbuzz", null, Encoding.ASCII.GetBytes("Hello World!"));
+
+            // Assert
+            monitoredChannel.Should().Raise("BasicReturn").WithArgs<BasicReturnEventArgs>(a => a.Exchange == "my_exchange");
+            monitoredChannel.Should().Raise("BasicAcks");
+        }
+
+        [Test]
+        public void BasicPublish_PublisherConfirmsEnabled_RaisesBasicAcksEvent()
+        {
+            // Arrange
+            var node = new RabbitServer();
+            var channel = new FakeModel(node);
+
+            channel.QueueDeclare("my_queue");
+
+            channel.ConfirmSelect();
+
+            using var monitoredChannel = channel.Monitor();
+
+            // Act
+            channel.BasicPublish(node.DefaultExchange.Name, "my_queue", null, Encoding.ASCII.GetBytes("Hello World!"));
+
+            // Assert
+            monitoredChannel.Should().Raise("BasicAcks");
+        }
+
+        [Test]
+        public void WaitForConfirms_PublisherConfirmsDisabled_ThrowsInvalidOperationException()
+        {
+            // Arrange
+            var node = new RabbitServer();
+            var sut = new FakeModel(node);
+
+            // Act
+            Action action = () => sut.WaitForConfirms();
+
+            // Assert
+            action.Should().Throw<InvalidOperationException>();
+        }
+
+        [Test]
+        public void WaitForConfirms_PublisherConfirmsEnabled_ReturnsTrue()
+        {
+            // Arrange
+            var node = new RabbitServer();
+            var sut = new FakeModel(node);
+
+            sut.ConfirmSelect();
+
+            // Act
+            var allAcked = sut.WaitForConfirms();
+
+            // Assert
+            allAcked.Should().BeTrue();
+        }
+
         private void AssertEqual(ReadOnlyMemory<byte> actual, ReadOnlySpan<byte> expected)
         {
             actual.Span.SequenceEqual(expected).Should().BeTrue();

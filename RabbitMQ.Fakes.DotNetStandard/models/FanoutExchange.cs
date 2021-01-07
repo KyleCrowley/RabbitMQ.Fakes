@@ -29,19 +29,15 @@ namespace RabbitMQ.Fakes.DotNetStandard.Models
             _queues.Remove(queue);
         }
 
-        public override bool PublishMessage(RabbitMessage message)
+        protected override IEnumerable<Queue> GetQueues(RabbitMessage message)
         {
+            // Messages can always be routed, unless there are no bound Queues.
             if (_queues.Count == 0)
             {
-                return false;
+                return Enumerable.Empty<Queue>();
             }
 
-            foreach (var queue in _queues)
-            {
-                queue.PublishMessage(message);
-            }
-
-            return true;
+            return _queues;
         }
     }
 }

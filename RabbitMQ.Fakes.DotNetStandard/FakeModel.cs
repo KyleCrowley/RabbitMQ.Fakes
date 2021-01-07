@@ -18,6 +18,7 @@ namespace RabbitMQ.Fakes.DotNetStandard
         public readonly ConcurrentDictionary<ulong, RabbitMessage> WorkingMessages = new ConcurrentDictionary<ulong, RabbitMessage>();
 
         private long _lastDeliveryTag;
+        private bool _publisherConfirmsEnabled;
 
         #region Properties
 
@@ -55,11 +56,7 @@ namespace RabbitMQ.Fakes.DotNetStandard
             remove { throw new NotImplementedException(); }
         }
 
-        event EventHandler<BasicReturnEventArgs> IModel.BasicReturn
-        {
-            add { throw new NotImplementedException(); }
-            remove { throw new NotImplementedException(); }
-        }
+        public event EventHandler<BasicReturnEventArgs> BasicReturn;
 
         event EventHandler<EventArgs> IModel.BasicRecoverOk
         {
@@ -67,17 +64,9 @@ namespace RabbitMQ.Fakes.DotNetStandard
             remove { throw new NotImplementedException(); }
         }
 
-        event EventHandler<BasicNackEventArgs> IModel.BasicNacks
-        {
-            add { throw new NotImplementedException(); }
-            remove { throw new NotImplementedException(); }
-        }
+        public event EventHandler<BasicNackEventArgs> BasicNacks;
 
-        event EventHandler<BasicAckEventArgs> IModel.BasicAcks
-        {
-            add { throw new NotImplementedException(); }
-            remove { throw new NotImplementedException(); }
-        }
+        public event EventHandler<BasicAckEventArgs> BasicAcks;
 
         event EventHandler<FlowControlEventArgs> IModel.FlowControl
         {
@@ -231,7 +220,7 @@ namespace RabbitMQ.Fakes.DotNetStandard
                 // If the "x-dead-letter-routing-key" argument was specified, that key is used instead of the "original" routing key.
                 // https://www.rabbitmq.com/dlx.html#routing
                 message.RoutingKey = processingQueue.Arguments.TryGetValue("x-dead-letter-routing-key", out var key)
-                    ? (string) key
+                    ? (string)key
                     : message.RoutingKey;
 
                 exchange.PublishMessage(message);
@@ -299,7 +288,7 @@ namespace RabbitMQ.Fakes.DotNetStandard
 
         public void ConfirmSelect()
         {
-            throw new NotImplementedException();
+            _publisherConfirmsEnabled = true;
         }
 
         public uint ConsumerCount(string queue)
@@ -526,30 +515,31 @@ namespace RabbitMQ.Fakes.DotNetStandard
             throw new NotImplementedException();
         }
 
+        // TODO: Need to determine an actual implementation for the WaitForConfirms* methods.
+        // In "real" RabbitMQ, publisher confirms are sent back to the client asynchronously.
+        // One use case for these methods is publishing a batch of messages and then waiting for all "pending" responses.
         public bool WaitForConfirms(TimeSpan timeout, out bool timedOut)
         {
-            throw new NotImplementedException();
+            if (!_publisherConfirmsEnabled)
+            {
+                throw new InvalidOperationException("This channel is not in confirm mode (publisher confirms were not enabled via ConfirmSelect().");
+            }
+
+            timedOut = false;
+            return true;
         }
 
-        public bool WaitForConfirms(TimeSpan timeout)
-        {
-            throw new NotImplementedException();
-        }
+        // TODO: Return true when all messages have been acked by the broker. Otherwise, return false.
+        public bool WaitForConfirms(TimeSpan timeout) => WaitForConfirms(timeout, out _);
 
-        public bool WaitForConfirms()
-        {
-            throw new NotImplementedException();
-        }
+        // TODO: Return true when all messages have been acked by the broker. Otherwise, return false.
+        public bool WaitForConfirms() => WaitForConfirms(TimeSpan.Zero);
 
-        public void WaitForConfirmsOrDie()
-        {
-            throw new NotImplementedException();
-        }
+        // TODO: Should throw an Exception when a nack is received.
+        public void WaitForConfirmsOrDie() => WaitForConfirmsOrDie(TimeSpan.Zero);
 
-        public void WaitForConfirmsOrDie(TimeSpan timeout)
-        {
-            throw new NotImplementedException();
-        }
+        // TODO: Should throw an Exception when a nack is received or the timeout has elapsed.
+        public void WaitForConfirmsOrDie(TimeSpan timeout) => WaitForConfirms(timeout);
 
         #endregion IModel Implementation
 
@@ -603,15 +593,30 @@ namespace RabbitMQ.Fakes.DotNetStandard
             Func<ulong, RabbitMessage, RabbitMessage> updateFunction = (key, existingMessage) => existingMessage;
             WorkingMessages.AddOrUpdate(deliveryTag, message, updateFunction);
 
+            NextPublishSeqNo++;
+
             if (!_server.Exchanges.TryGetValue(exchange, out var exchangeInstance))
             {
                 throw new InvalidOperationException($"Cannot publish to exchange '{exchange}' as it does not exist.");
             }
 
-            // TODO: Handle unroutable messages.
-            var success = exchangeInstance.PublishMessage(message);
+            var canRoute = exchangeInstance.PublishMessage(message);
 
-            NextPublishSeqNo++;
+            // We only raise events if publisher confirms are enabled.
+            if (_publisherConfirmsEnabled)
+            {
+                // https://www.rabbitmq.com/confirms.html#when-publishes-are-confirmed
+                // Mandatory messages are special case that receive both an basic.ack (or basic.nack) and basic.return.
+                // The basic.return is sent *before* the ack/nack.
+                if (message.Mandatory && !canRoute)
+                {
+                    OnMessageReturned(message, exchange, routingKey);
+                }
+
+                // An ack (basic.ack) just confirms that the broker received the message.
+                // This doesn't mean that the broker was able to *route* the message; that is handled by basic.return (see above).
+                OnMessageAcknowledged(message);
+            }
         }
 
         public void ExchangeDeclare(string exchange, string type, bool durable)
@@ -681,6 +686,25 @@ namespace RabbitMQ.Fakes.DotNetStandard
             }
 
             return message != null;
+        }
+
+        private void OnMessageAcknowledged(RabbitMessage message)
+        {
+            // TODO: Handle multiple publisher acknowledgment.
+            BasicAcks?.Invoke(this, new BasicAckEventArgs { DeliveryTag = message.DeliveryTag, Multiple = false });
+        }
+
+        private void OnMessageReturned(RabbitMessage message, string exchange, string routingKey)
+        {
+            BasicReturn?.Invoke(this, new BasicReturnEventArgs
+            {
+                BasicProperties = message.BasicProperties,
+                Body = message.Body,
+                Exchange = exchange,
+                ReplyCode = 0,
+                ReplyText = "Message could not be delivered to any queues bound to the exchange.",
+                RoutingKey = routingKey
+            });
         }
 
         #endregion Private Methods

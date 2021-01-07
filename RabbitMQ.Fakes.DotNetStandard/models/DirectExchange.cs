@@ -49,19 +49,14 @@ namespace RabbitMQ.Fakes.DotNetStandard.Models
             }
         }
 
-        public override bool PublishMessage(RabbitMessage message)
+        protected override IEnumerable<Queue> GetQueues(RabbitMessage message)
         {
             if (!Bindings.TryGetValue(message.RoutingKey, out var queues))
             {
-                return false;
+                return Enumerable.Empty<Queue>();
             }
 
-            foreach (var queue in queues)
-            {
-                queue.PublishMessage(message);
-            }
-
-            return true;
+            return queues;
         }
     }
 }

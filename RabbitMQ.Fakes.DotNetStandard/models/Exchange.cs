@@ -1,6 +1,7 @@
 ﻿using System.Collections;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Linq;
 
 namespace RabbitMQ.Fakes.DotNetStandard.Models
 {
@@ -24,6 +25,22 @@ namespace RabbitMQ.Fakes.DotNetStandard.Models
 
         public abstract void UnbindQueue(string bindingKey, Queue queue);
 
-        public abstract bool PublishMessage(RabbitMessage message);
+        protected abstract IEnumerable<Queue> GetQueues(RabbitMessage message);
+
+        public bool PublishMessage(RabbitMessage message)
+        {
+            var queues = GetQueues(message);
+            if (queues?.Any() != true)
+            {
+                return false;
+            }
+
+            foreach (var queue in queues)
+            {
+                queue.PublishMessage(message);
+            }
+
+            return true;
+        }
     }
 }
