@@ -1079,6 +1079,45 @@ namespace RabbitMQ.Fakes.DotNetCore.Tests
             allAcked.Should().BeTrue();
         }
 
+        [Test]
+        public void NextPublishSeqNo_AccessedTwiceWithoutBasicPublish_ShouldReturnOne()
+        {
+            // Arrange
+            var node = new RabbitServer();
+            var sut = new FakeModel(node);
+
+            sut.QueueDeclare("my_queue");
+
+            // Act
+            var initialPublishSequenceNumber = sut.NextPublishSeqNo;
+            var nextPublishSequenceNumber = sut.NextPublishSeqNo;
+
+            // Assert
+            initialPublishSequenceNumber.Should().Be(1);
+            nextPublishSequenceNumber.Should().Be(1);
+        }
+
+        [Test]
+        public void NextPublishSeqNo_AccessedBeforeAndAfterBasicPublish_ShouldReturnOneThenTwo()
+        {
+            // Arrange
+            var node = new RabbitServer();
+            var sut = new FakeModel(node);
+
+            sut.QueueDeclare("my_queue");
+
+            // Act
+            var initialPublishSequenceNumber = sut.NextPublishSeqNo;
+            sut.BasicPublish(node.DefaultExchange.Name, "my_queue", null, Encoding.ASCII.GetBytes("Hello World!"));
+            var result = sut.BasicGet("my_queue", false);
+            var nextPublishSequenceNumber = sut.NextPublishSeqNo;
+
+            // Assert
+            initialPublishSequenceNumber.Should().Be(1);
+            result.DeliveryTag.Should().Be(1);
+            nextPublishSequenceNumber.Should().Be(2);
+        }
+
         private void AssertEqual(ReadOnlyMemory<byte> actual, ReadOnlySpan<byte> expected)
         {
             actual.Span.SequenceEqual(expected).Should().BeTrue();

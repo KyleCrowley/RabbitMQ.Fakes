@@ -1,0 +1,99 @@
+# Based on: https://dusted.codes/github-actions-for-dotnet-core-nuget-packages and
+# https://github.com/giraffe-fsharp/Giraffe/blob/master/.github/workflows/build.yml
+
+name: .NET Core
+on:
+  push:
+  pull_request:
+  release:
+    types:
+      - published
+env:
+  # Disable (NuGet) package caching to improve performance.
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+  # Telemetry is enabled by default. To improve performance, it is disabled.
+  # https://docs.microsoft.com/en-us/dotnet/core/tools/telemetry#how-to-opt-out
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+  # Project name to pack and publish
+  PROJECT_NAME: RabbitMQ.Fakes.DotNetStandard
+  # GitHub Packages feed settings
+  GITHUB_FEED: https://nuget.pkg.github.com/KyleCrowley/
+  GITHUB_USER: KyleCrowley
+  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  # Official NuGet (NuGet Gallery) feed settings
+  NUGET_FEED: https://api.nuget.org/v3/index.json
+  NUGET_KEY: ${{ secrets.NUGET_KEY }}
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ ubuntu-latest, windows-latest, macos-latest ]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+      - name: Setup .NET Core
+        uses: actions/setup-dotnet@v1
+        with:
+          dotnet-version: 3.1.x
+      - name: Restore
+        run: dotnet restore
+      - name: Build
+        run: dotnet build -c Release --no-restore
+      - name: Test
+        run: dotnet test -c Release
+      - name: Pack
+        if: matrix.os == 'ubuntu-latest'
+        run: dotnet pack -v normal -c Release --no-restore --include-source --include-symbols -p:SymbolPackageFormat=snupkg -p:PackageVersion=$GITHUB_RUN_ID $PROJECT_NAME/$PROJECT_NAME.*proj
+      - name: Upload Artifact
+        if: matrix.os == 'ubuntu-latest'
+        uses: actions/upload-artifact@v2
+        with:
+          name: nupkg
+          path: ./${{ env.PROJECT_NAME }}/bin/Release/$PROJECT_NAME.$GITHUB_RUN_ID.*[n|sn]upkg
+  prerelease:
+    needs: build
+    if: github.ref == 'refs/heads/develop'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download Artifact
+        uses: actions/download-artifact@v1
+        with:
+          name: nupkg
+      - name: Push to GitHub Feed
+        # GitHub Packages does not support publishing a .snupkg (yet).
+        # https://github.community/t/does-github-packages-dotnet-nuget-supports-to-publish-snupkg/123286/7
+        run: |
+          for f in ./nupkg/$PROJECT_NAME.nupkg
+          do
+            curl -vX PUT -u "$GITHUB_USER:$GITHUB_TOKEN" -F package=@$f $GITHUB_FEED
+          done
+  release:
+    needs: build
+    if: github.event_name == 'release'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - name: Setup .NET Core
+        uses: actions/setup-dotnet@v1
+        with:
+          dotnet-version: 3.1.x
+      - name: Set Package Version
+        run: |
+          arrTag=(${GITHUB_REF//\// })
+          VERSION="${arrTag[2]}"
+          echo Version: $VERSION
+          VERSION="${VERSION//v}"
+          echo Clean Version: $VERSION
+          echo "PACKAGE_VERSION=$VERSION" >> $GITHUB_ENV
+      - name: Create NuGet package
+        # Legacy (.symbols.nupkg) symbols are no longer supported by the NuGet Gallery symbol server.
+        # By default, dotnet pack will create a .symbols.nupkg if --include-symbols is specified.
+        # However, if we add the -p:SymbolPackageFormat=snupkg flag, dotnet pack will create a .snupkg instead.
+        # https://docs.microsoft.com/en-us/dotnet/core/tools/dotnet-pack
+        # https://docs.microsoft.com/en-us/nuget/create-packages/symbol-packages-snupkg
+        run: dotnet pack -v normal -c Release --include-source --include-symbols -p:SymbolPackageFormat=snupkg -p:PackageVersion=$PACKAGE_VERSION -o nupkg $PROJECT_NAME/$PROJECT_NAME.*proj
+      - name: Push to NuGet feed
+        # The symbols package (snupkg) will be pushed alongside the package itself (nupkg). No need to use a regex.
+        # https://docs.microsoft.com/en-us/nuget/create-packages/symbol-packages-snupkg#publishing-a-symbol-package
+        run: dotnet nuget push ./nupkg/$PROJECT_NAME.$PACKAGE_VERSION.nupkg --source $NUGET_FEED --skip-duplicate --api-key $NUGET_KEY

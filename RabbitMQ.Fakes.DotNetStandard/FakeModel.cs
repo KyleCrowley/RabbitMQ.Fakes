@@ -19,6 +19,7 @@ namespace RabbitMQ.Fakes.DotNetStandard
 
         private long _lastDeliveryTag;
         private bool _publisherConfirmsEnabled;
+        private long _nextPublishSequenceNumber = 1;
 
         #region Properties
 
@@ -26,7 +27,7 @@ namespace RabbitMQ.Fakes.DotNetStandard
 
         public TimeSpan ContinuationTimeout { get; set; }
 
-        public ulong NextPublishSeqNo { get; set; }
+        public ulong NextPublishSeqNo => (ulong)_nextPublishSequenceNumber;
 
         public bool IsOpen { get; set; }
 
@@ -578,8 +579,7 @@ namespace RabbitMQ.Fakes.DotNetStandard
 
         public void BasicPublish(string exchange, string routingKey, bool mandatory, bool immediate, IBasicProperties basicProperties, byte[] body)
         {
-            Interlocked.Increment(ref _lastDeliveryTag);
-            var deliveryTag = Convert.ToUInt64(_lastDeliveryTag);
+            var deliveryTag = (ulong)Interlocked.Increment(ref _lastDeliveryTag);
             var message = new RabbitMessage
             {
                 Exchange = exchange,
@@ -593,14 +593,14 @@ namespace RabbitMQ.Fakes.DotNetStandard
             Func<ulong, RabbitMessage, RabbitMessage> updateFunction = (key, existingMessage) => existingMessage;
             WorkingMessages.AddOrUpdate(deliveryTag, message, updateFunction);
 
-            NextPublishSeqNo++;
-
             if (!_server.Exchanges.TryGetValue(exchange, out var exchangeInstance))
             {
                 throw new InvalidOperationException($"Cannot publish to exchange '{exchange}' as it does not exist.");
             }
 
             var canRoute = exchangeInstance.PublishMessage(message);
+
+            Interlocked.Increment(ref _nextPublishSequenceNumber);
 
             // We only raise events if publisher confirms are enabled.
             if (_publisherConfirmsEnabled)
